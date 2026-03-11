@@ -1,0 +1,89 @@
+services:
+  ##################################################################################################
+  # INFRASTRUCTURE
+  ##################################################################################################   
+  db-cvinsight:
+    image: postgres:16
+    container_name: db-cvinsight
+    restart: always
+    env_file:
+      - env.db.prod
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  rabbitmq-cvinsight:
+    image: rabbitmq:3-management
+    container_name: rabbitmq-cvinsight
+    restart: always
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    env_file:
+      - env.rabbitmq.prod
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmqctl status"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  ##################################################################################################
+  # MIGRATION
+  ##################################################################################################
+  db-cvinsight-migration:
+    image: us-central1-docker.pkg.dev/ridwan-faturrahman/cvinsight-repo/api-cvinsight-app:latest
+    container_name: db-cvinsight-migration
+    command: alembic upgrade head
+    env_file:
+      - env.backend.prod
+    depends_on:
+      db-cvinsight:
+        condition: service_healthy
+    restart: "no"
+
+  ##################################################################################################
+  # APPLICATION SERVICES
+  ##################################################################################################
+  api-cvinsight:
+    image: us-central1-docker.pkg.dev/ridwan-faturrahman/cvinsight-repo/api-cvinsight-app:latest
+    container_name: api-cvinsight
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - env.backend.prod
+    depends_on:
+      db-cvinsight:
+        condition: service_healthy
+      rabbitmq-cvinsight:
+        condition: service_healthy
+
+  worker-cvinsight:
+    image: us-central1-docker.pkg.dev/ridwan-faturrahman/cvinsight-repo/worker-cvinsight-app:latest
+    container_name: worker-cvinsight
+    restart: always
+    env_file:
+      - env.worker.prod
+    depends_on:
+      db-cvinsight:
+        condition: service_healthy
+      rabbitmq-cvinsight:
+        condition: service_healthy
+        
+  cvinsight:
+    image: us-central1-docker.pkg.dev/ridwan-faturrahman/cvinsight-repo/cvinsight-app:latest
+    container_name: cvinsight
+    restart: always
+    ports:
+      - "5173:80"
+
+volumes:
+  postgres_data:
